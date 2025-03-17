@@ -26,25 +26,59 @@ class NewTempEmail:
         self.blocked_domains = self.get_blocked_domains()
         
     def get_blocked_domains(self):
-        """Get blocked domains list"""
+        """Get blocked domains list from both URL and local file"""
+        blocked_domains = []
+        
+        # Get domains from URL
         try:
             block_url = "https://raw.githubusercontent.com/yeongpin/cursor-free-vip/main/block_domain.txt"
             response = requests.get(block_url, timeout=5)
             if response.status_code == 200:
                 # Split text and remove empty lines
-                domains = [line.strip() for line in response.text.split('\n') if line.strip()]
+                url_domains = [line.strip() for line in response.text.split('\n') if line.strip()]
+                blocked_domains.extend(url_domains)
                 if self.translator:
-                    print(f"{Fore.CYAN}ℹ️  {self.translator.get('email.blocked_domains_loaded', count=len(domains))}{Style.RESET_ALL}")
+                    print(f"{Fore.CYAN}ℹ️  {self.translator.get('email.blocked_domains_loaded_url', count=len(url_domains))}{Style.RESET_ALL}")
                 else:
-                    print(f"{Fore.CYAN}ℹ️ 已加载 {len(domains)} 个被屏蔽的域名{Style.RESET_ALL}")
-                return domains
-            return []
+                    print(f"{Fore.CYAN}ℹ️ 已从URL加载 {len(url_domains)} 个被屏蔽的域名{Style.RESET_ALL}")
         except Exception as e:
             if self.translator:
-                print(f"{Fore.YELLOW}⚠️ {self.translator.get('email.blocked_domains_error', error=str(e))}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}⚠️ {self.translator.get('email.blocked_domains_url_error', error=str(e))}{Style.RESET_ALL}")
             else:
-                print(f"{Fore.YELLOW}⚠️ 获取被屏蔽域名列表失败: {str(e)}{Style.RESET_ALL}")
-            return []
+                print(f"{Fore.YELLOW}⚠️ 从URL获取被屏蔽域名列表失败: {str(e)}{Style.RESET_ALL}")
+        
+        # Get domains from local file
+        try:
+            local_file_path = "block_domain.txt"
+            if os.path.exists(local_file_path):
+                with open(local_file_path, 'r') as file:
+                    local_domains = [line.strip() for line in file.readlines() if line.strip()]
+                    blocked_domains.extend(local_domains)
+                    if self.translator:
+                        print(f"{Fore.CYAN}ℹ️  {self.translator.get('email.blocked_domains_loaded_local', count=len(local_domains))}{Style.RESET_ALL}")
+                    else:
+                        print(f"{Fore.CYAN}ℹ️ 已从本地文件加载 {len(local_domains)} 个被屏蔽的域名{Style.RESET_ALL}")
+            else:
+                if self.translator:
+                    print(f"{Fore.YELLOW}⚠️ {self.translator.get('email.blocked_domains_local_not_found')}{Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.YELLOW}⚠️ 本地屏蔽域名文件不存在{Style.RESET_ALL}")
+        except Exception as e:
+            if self.translator:
+                print(f"{Fore.YELLOW}⚠️ {self.translator.get('email.blocked_domains_local_error', error=str(e))}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}⚠️ 从本地文件获取被屏蔽域名列表失败: {str(e)}{Style.RESET_ALL}")
+        
+        # Remove duplicates
+        blocked_domains = list(set(blocked_domains))
+        
+        if blocked_domains:
+            if self.translator:
+                print(f"{Fore.CYAN}ℹ️  {self.translator.get('email.blocked_domains_total', count=len(blocked_domains))}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.CYAN}ℹ️ 总共加载 {len(blocked_domains)} 个被屏蔽的域名{Style.RESET_ALL}")
+        
+        return blocked_domains
     
     def exclude_blocked_domains(self, domains):
         """Exclude blocked domains"""
@@ -127,6 +161,35 @@ class NewTempEmail:
                                 return self.create_email()  # Recursively call
 
                         raise Exception(f"{self.translator.get('email.no_available_domains_after_filtering') if self.translator else '过滤后没有可用域名'}")
+
+                    # Display first 3 domains and let user choose
+                    display_count = min(3, len(filtered_domains))
+                    print(f"\n{Fore.CYAN}ℹ️ 可用的前 {display_count} 个域名:{Style.RESET_ALL}")
+                    for i in range(display_count):
+                        print(f"{Fore.CYAN}{i+1}. {filtered_domains[i]['domain']}{Style.RESET_ALL}")
+                    
+                    # User selection
+                    selected_index = 0
+                    while True:
+                        try:
+                            if self.translator:
+                                choice = input(f"\n{self.translator.get('email.domain_selection_prompt', count=display_count)}: ")
+                            else:
+                                choice = input(f"\n请选择域名 (1-{display_count})，直接回车使用第一个: ")
+                            
+                            if choice.strip() == "":
+                                selected_index = 0  # Default to first domain
+                                break
+                                
+                            choice_num = int(choice)
+                            if 1 <= choice_num <= display_count:
+                                selected_index = choice_num - 1
+                                break
+                            else:
+                                print(f"{Fore.YELLOW}⚠️ 请输入有效的选择 (1-{display_count}){Style.RESET_ALL}")
+                        except ValueError:
+                            print(f"{Fore.YELLOW}⚠️ 请输入数字{Style.RESET_ALL}")
+                            
                 except Exception as e:
                     print(f"{Fore.RED}❌ 过滤域名时出错: {str(e)}{Style.RESET_ALL}")
                     raise
@@ -136,8 +199,8 @@ class NewTempEmail:
                     username, password = self._generate_credentials()
                     self.password = password
 
-                    # Create email account
-                    selected_domain = filtered_domains[0]['domain']
+                    # Create email account with selected domain
+                    selected_domain = filtered_domains[selected_index]['domain']
                     email = f"{username}@{selected_domain}"
 
                     if self.translator:
